@@ -21,7 +21,7 @@ library(loon.ggplot)
 ```{r}
 
 df <- read.csv(
-  "C:/Users/xavie/OneDrive/Documents/bios611/project/match_data_clean.csv",
+  "match_data_clean.csv",
   header=TRUE)
 
 #Interactive histogram of total goals per game
