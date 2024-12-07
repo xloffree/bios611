@@ -1,0 +1,28 @@
+---
+title: "rank_conf"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(mclust)
+coords_df <- read.csv("avg_team_data_cont.csv")
+#Confusion matrix
+cont_conf <- table(coords_df$cluster5, coords_df$cont_g1)
+write.csv(cont_conf, "continent_confusion.csv")
+```
+Does not look like there is any intelligent clustering by geography.
+
+Let's check the adjusted Rand index to be sure of this.
+
+```{r}
+
+# adjusted Rand index
+adjusted_rand <- adjustedRandIndex(coords_df$cluster5, coords_df$cont_g1)
+print(adjusted_rand)
+```
+The value close to zero indicates random assignment!

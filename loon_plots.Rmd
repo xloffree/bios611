@@ -1,0 +1,51 @@
+---
+title: "Loon_plots"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+library(loon)
+library(loon.ggplot)
+
+```
+
+
+
+```{r}
+
+df <- read.csv(
+  "C:/Users/xavie/OneDrive/Documents/bios611/project/match_data_clean.csv",
+  header=TRUE)
+
+#Interactive histogram of total goals per game
+#Change bin width with toggle
+h <- l_hist(df$total.goals,
+            yshows = "density",
+            showBinHandle = TRUE,
+            xlabel = "Total goals per game",
+            title = "Total Goals Per Game",
+            linkingGroup = "total_goals",
+            showScales = TRUE)
+
+#Scatter plot of total attempts on goal vs total attempted line breaks
+#Linked to total goals histogram
+#Selecting different groups of points, seems like attempts on goal are more
+#correlated with total goals than are attempted line breaks
+p <- l_plot(x = df$total.attempted.defensive.line.breaks, 
+            y = df$total.attempts,
+            xlabel = "Total attempted defensive line breaks", 
+            ylabel = "Total attempts (at goal)",
+            linkingGroup = "total_goals",
+            title = "Total attempts on goal vs total attempted line breaks")
+
+
+
+
+```

@@ -1,0 +1,58 @@
+---
+title: "foul_map"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Does the number of fouls comitted differ by geography?
+
+```{r, fig.height=30}
+
+library(ggplot2)
+library(maps)
+
+coords_df <- read.csv(
+  "avg_team_data.csv",
+  header=TRUE
+)
+
+#Does the number of fouls committed per game differ by geographic region?
+
+#Add fouls category by splitting into three quantiles
+coords_df$fouls_category <- 
+  cut(coords_df$fouls.committed, 
+      breaks = c(0, 
+                 quantile(coords_df$fouls.committed, 0.33),
+                 quantile(coords_df$fouls.committed, 0.66), 
+                 quantile(coords_df$fouls.committed, 1)),
+                                labels = c("Lower third", 
+                                           "Middle third", 
+                                           "Upper third"))
+
+
+
+
+#Put capital city of each team on map
+#Facet by number of fouls
+
+map_outline <- map_data("world")
+
+foul_map <- ggplot(coords_df, aes(x = Longitude, y = Latitude)) +
+    geom_point(color = "red", size = 6) +
+    labs(x = "Longitude", y = "Latitude", title = "World Cup Capitals")
+
+# Add the map layer and facet by 'fouls_category'
+foul_map <- foul_map + 
+    geom_path(data = map_outline, aes(x = long, y = lat, group = group), color = "forestgreen") +
+    facet_wrap(~ fouls_category, ncol=1)
+
+
+foul_map
+ggsave("foul_map.png")
+```
+It does not look like there are any geographical patterns with regard to number
+of fouls comitted.

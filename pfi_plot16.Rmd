@@ -1,0 +1,32 @@
+---
+title: "pfi_df"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+pfi_df <- read.csv("pfi_df.csv")
+# Plot the coefficients for each class
+ggplot(pfi_df, aes(x=Var, y=PFI)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "PFI Values", 
+       x = "Feature", 
+       y = "PFI") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6)) 
+ggsave("pfi_plot.png")
+```
+
+
+A negative PFI values indicates that the model accuracy decreased when permuting that particular variable, and vice versa for positive PFI values. A PFI
+value of 0 indicates that there was no change in model accuracy.
+
+The PFI results differed from the coefficients values. Notably, the PFI for red
+cards was 0. Forced turnovers was the second lowest PFI value, even though it did not have a particularly large coefficient value. Total 
+attempts on goal was the most influential variable in terms of PFI and in terms
+of coefficient values

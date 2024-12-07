@@ -1,0 +1,121 @@
+---
+title: "EN"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Elastic net
+
+```{r}
+set.seed(42)
+library(glmnet)
+library(data.table)
+train_data <- read.csv("train_data.csv")
+test_data <- read.csv("test_data.csv")
+# Prepare data for elastic net
+#Train test split
+x <- model.matrix(result ~ ., data = train_data)[,-1] 
+y <- train_data$result
+x_test <- model.matrix(result ~ ., data = test_data)[, -1]
+y_test <- test_data$result
+
+# Fit elastic net regression
+en_model <- cv.glmnet(as.matrix(x), y, family = "multinomial", alpha = 0.5,
+                      type.measure = "class")
+
+#Optimal lambda
+en_model$lambda.min
+#Selected coefficients for each class (tie, win, loss)
+coefs <- coef(en_model, s = en_model$lambda.min)
+coefs
+
+
+
+# Predicted class probabilities
+predicted_probs <- predict(en_model, newx = x_test, s = "lambda.min", type = "response")
+predicted_probs
+
+# Predicted class labels
+predicted_classes <- predict(en_model, newx = x_test, s = "lambda.min", type = "class")
+predicted_classes
+
+
+#Evaluate performance
+
+# Confusion matrix
+conf_matrix <- table(Predicted = predicted_classes, Actual = y_test)
+conf_matrix
+write.csv(conf_matrix, "en_conf.csv")
+
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+accuracy
+
+#Coefficients
+coefs <- coef(en_model, s = "lambda.min")
+#Coefficient df
+en_coef_df <- data.frame(Variable=c(colnames(x)),
+           coef0=coefs[1][[1]][2:40],
+           coef1=coefs[2][[1]][2:40],
+           coef2=coefs[3][[1]][2:40])
+#Convert data to long format for plotting
+long_df <- melt(data.table(en_coef_df), id.vars="Variable",
+     variable.name = "Model", value.name = "Value")
+write.csv(long_df, "coef_df.csv")
+```
+The accuracy of 65.38% is significantly greater than using multinomial logistic regression without variable selection. It appears that variable selection helped
+improve our model.
+
+
+
+#Permutation feature importance
+
+The coefficient values provide info on how important the variables were for 
+prediction. 
+Permutation feature importance (PFI) is another metric that can be used to assess
+the influence of a predictor on the model's prediction.
+PFI is the difference in model performance when one variable in the testing set
+is randomly permuted.
+Let's calculate PFI values for the elastic net model.
+
+```{r}
+
+test_data <- read.csv("test_data.csv")
+
+set.seed(42)
+#Vector to store PFI values
+pfi_vect <- NULL
+
+for (i in 1:ncol(test_data)) {
+  #Clone test data
+  test_data_per <- test_data
+  #Randomly permute column i
+  test_data_per[,i] <- sample(test_data_per[,i])
+  #Create test data with randomly permuted column i
+  x_test_per <- model.matrix(result ~ ., data = test_data_per)[, -1]
+  
+  # Predicted class labels
+  predicted_classes_per <- predict(en_model, newx = x_test_per, s = "lambda.min", 
+                               type = "class")
+
+  # Confusion matrix
+  conf_matrix_per <- table(Predicted = predicted_classes_per, Actual = y_test)
+  
+  # Calculate accuracy
+  accuracy_per <- sum(diag(conf_matrix_per)) / sum(conf_matrix_per)
+  acc_diff <- accuracy_per - accuracy
+  #Append to pfi vector
+  pfi_vect <- c(pfi_vect, acc_diff)
+
+}
+
+
+#Create pfi df
+pfi_df <- data.frame(Var=colnames(test_data),
+                     PFI=pfi_vect)
+write.csv(pfi_df, "pfi_df.csv")
+```

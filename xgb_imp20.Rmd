@@ -1,0 +1,32 @@
+---
+title: "xgb_imp"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(xgboost)
+importance <- read.csv("xgb_imp.csv")
+
+#Plot feature importance
+png("xgb_imp.png", width = 800, height = 600)  # Set file name and size
+xgb.plot.importance(importance_matrix = data.table(importance))
+dev.off()
+
+```
+
+The xgboost model can predict the total number of goals with a fair degree of
+accuracy. The MAE is less than one (0.6715505).
+
+We have seen earlier that our dataset contains a high degree of multicollinearity.
+Xgboost handles multicollinearity quite neatly on its own. Also, our dataset
+contains more predictors than observations. Xgboost can also handle this 
+efficiently.
+To offer some evidence for the previous statements, let's try to build a linear regression model with the same variables we used for the xgboost model.
+I suspect that the performance of this model will be poor without employing any
+kind of method to deal with the multicollinearity or any kind of dimension reduction.

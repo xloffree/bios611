@@ -1,0 +1,23 @@
+---
+title: "cluster_summary"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+coords_df <- read.csv("avg_team_data_kmeans.csv")
+#Show how the countries were categorized
+cluster_summary <- coords_df %>%
+  group_by(cluster5) %>%
+  summarize(team = paste(team, collapse = ", "))
+print(cluster_summary)
+write.csv(cluster_summary, "cluster_summary.csv")
+```
+
+Spain is the odd one out. Spain is known for having a distinct, possession-based
+play style.

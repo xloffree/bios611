@@ -1,0 +1,71 @@
+---
+title: "xgb"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+`
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+library(xgboost)
+set.seed(42)
+train_x <- read.csv("xgb_train_x.csv")
+train_y <- read.csv("xgb_train_y.csv")
+test_x <- read.csv("xgb_test_x.csv")
+test_y <- read.csv("xgb_test_y.csv")
+
+
+#Define final training and testing sets
+xgb_train = xgb.DMatrix(data = as.matrix(train_x), label = unlist(train_y))
+xgb_test = xgb.DMatrix(data = as.matrix(test_x), label = unlist(test_y))
+
+
+#Define watchlist
+watchlist = list(train=xgb_train, test=xgb_test)
+
+#Fit XGBoost model and display training and testing data at each round
+xgb_model = xgb.train(data = xgb_train, max.depth = 3, 
+                  watchlist=watchlist, nrounds = 70)
+#Avoid overfitting by stopping when rmse starts to increase
+xgb_final_model = xgb.train(data = xgb_train, max.depth = 3, 
+                  watchlist=watchlist, nrounds = 17)
+#Predictions
+y_pred <- predict(xgb_model, as.matrix(test_x))
+#MSE
+mean((unlist(test_y) - y_pred)^2) 
+#MAE
+caret::MAE(unlist(test_y), y_pred) 
+#RMSE
+caret::RMSE(unlist(test_y), y_pred) 
+
+
+write.csv(y_pred, "xgb_pred.csv")
+
+#Feature Importance
+importance <- xgb.importance(feature_names = colnames(train_x), model = xgb_model)
+print(importance)
+
+write.csv(importance, "xgb_imp.csv")
+
+```

@@ -1,0 +1,33 @@
+---
+title: "rank_data"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+So how did the algorithm make the clustering decisions?
+Let's check if it clustered the teams based on how well they performed in the
+tournament.
+The five groups can be:
+1. Eliminated in group stage (n=16)
+2. Eliminated in round of 16 (n=8)
+3. Eliminated in quarter finals (n=4)
+4. Eliminated in semi-finals (n=2)
+5. Finalists (n=2)
+
+
+```{r}
+
+coords_df <- read.csv("avg_team_data_cont.csv")
+
+
+place_g2 <- c("final", "16", "group", "quarter", "group", "group", "group",
+              "semi", "group", "group", "quarter", "final", "group", "group",
+              "group", "16", "16", "group", "semi", "quarter", "16", "quarter",
+              "group", "group", "16", "group", "16", "16", "group", "16",
+              "group", "group")
+coords_df$place_g2 <- place_g2
+write.csv(coords_df, "avg_team_data_rank.csv")
+```

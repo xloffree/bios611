@@ -1,0 +1,30 @@
+---
+title: "cluster_map"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Let's visualize the clusters on a map.
+
+```{r}
+library(ggplot2)
+library(maps)
+
+coords_df <- read.csv("avg_team_data_rank.csv")
+map_outline <- map_data("world")
+
+foul_map <- ggplot(coords_df, aes(x = Longitude, y = Latitude, colour = cluster5)) +
+    geom_point(size = 5) +
+    labs(x = "Longitude", y = "Latitude", title = "World Cup Capitals")
+# Add the map layer and facet
+foul_map <- foul_map + 
+    geom_path(data = map_outline, aes(x = long, y = lat, group = group), color = "forestgreen")
+
+foul_map
+ggsave("cluster_map.png")
+```
+
+The clustering on visualized on the map does not appear to reveal any patterns.

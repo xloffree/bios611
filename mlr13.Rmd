@@ -1,0 +1,43 @@
+---
+title: "mlr"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(nnet)
+train_data <- read.csv("train_data.csv")
+test_data <- read.csv("test_data.csv")
+#Multinomial logistic regression
+mlog_reg_outcome <- multinom(result ~., data = train_data)
+
+logregsum <- summary(mlog_reg_outcome)
+
+predictions <- predict(mlog_reg_outcome, newdata = test_data)
+
+conf_matrix <- table(test_data$result, predictions)
+conf_matrix
+write.csv(conf_matrix, "mlr_conf.csv")
+#Accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+accuracy
+
+
+
+#Pvalues
+p_values <- summary(mlog_reg_outcome)$coefficients / summary(mlog_reg_outcome)$standard.errors
+p_values <- (1 - pnorm(abs(p_values), 0, 1)) * 2
+p_values
+
+```
+The accuracy of our model was 0.5. This means that we can predict the outcome
+of the match with an accuracy greater than random guessing (which would have an
+accuracy of 0.33).
+
+However, the very high p-values indicate we may have a problem with 
+multicollinearity. Let's fix this by using elastic net as a variable selection
+method.

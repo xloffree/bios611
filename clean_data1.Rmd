@@ -1,0 +1,69 @@
+---
+title: "clean_data"
+author: "Xavier Loffree"
+date: "2024-12-06"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(maps)
+library(ggplot2)
+library(tidyverse)
+library(mclust)
+library(xgboost)
+library(nnet)
+library(glmnet)
+library(data.table)
+library(caret)
+#setwd("C:/Users/xavie/OneDrive/Documents/bios611/project/")
+df <- read.csv("Fifa_world_cup_matches.csv", header=TRUE)
+
+```
+
+# Clean data and add variables
+
+```{r}
+#Make sure corresponding var names for teams 1 and 2 differ only by the team number
+#In other words, some of the column names have typos that we need to fix
+colnames(df)[which(colnames(df)=="attempts.inside.the.penalty.area..team2")] <-
+  "attempts.inside.the.penalty.area.team2"
+colnames(df)[which(colnames(df)=="completed.line.breaksteam1")] <-
+  "completed.line.breaks.team1"
+colnames(df)[which(colnames(df)=="completed.defensive.line.breaksteam1")] <-
+  "completed.defensive.line.breaks.team1"
+
+
+
+#Add total goals column
+df$total.goals <- df$number.of.goals.team1 + df$number.of.goals.team2
+
+#Add total attempts column
+df$total.attempts <- df$total.attempts.team1 + df$total.attempts.team2
+
+#Add total attempted line breaks column
+df$total.attempted.defensive.line.breaks <- 
+  df$attempted.defensive.line.breaks.team1 +
+  df$attempted.defensive.line.breaks.team2
+
+#Add indicator variable for if game is an elimination game
+df$elimination <- as.factor(c(rep(0,48), rep(1,16)))
+
+#Convert percentages to numerical vars
+pct_cols <- c("possession.team1", "possession.team2", "possession.in.contest")
+df[,pct_cols] <- lapply(df[,pct_cols], function(x) as.numeric(gsub("%", "", x)))
+
+#Add match outcome variable, 1=team1 win, 2=team2 win, 0=tie
+df$outcome <- as.factor(ifelse(df$number.of.goals.team1>df$number.of.goals.team2,1,
+                     ifelse(df$number.of.goals.team1<df$number.of.goals.team2,2,0)))
+
+
+write.csv(
+  df, "match_data_clean.csv",
+          row.names = FALSE)
+
+```

@@ -1,0 +1,27 @@
+---
+title: "rank_conf"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(mclust)
+coords_df <- read.csv("avg_team_data_rank.csv")
+
+#Confusion matrix
+rank_conf <- table(coords_df$cluster5, coords_df$place_g2)
+write.csv(rank_conf, "rank_conf.csv")
+```
+Still does not look promising...
+
+```{r}
+
+# adjusted Rand index
+adjusted_rand <- adjustedRandIndex(coords_df$cluster5, coords_df$place_g2)
+print(adjusted_rand)
+```
+The value is still very close to zero.

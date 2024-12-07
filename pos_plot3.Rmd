@@ -1,0 +1,39 @@
+---
+title: "possession_plot"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exploratory visualizations
+
+```{r}
+library(ggplot2)
+df <- read.csv("match_data_clean.csv", header=TRUE)
+#Is the possession split more evenly in elimination games than in group games?
+pos_plot <- ggplot(df, aes(x = possession.team1, y = possession.team2, color = elimination)) +
+  geom_point(size = 3) +
+  labs(x = "Possession team 1", y = "Possession team 2", color = "Elimination Game") +
+  ggtitle("Possession comparison coloured by elimination game indicator") +
+  scale_x_continuous(limits = c(10, 80)) +
+  scale_y_continuous(limits = c(10, 80))
+
+
+ggsave("pos_plot.png")
+
+
+
+
+```
+
+The distribution of the total number of goals is skewed to the right.
+There appears to be a positive correlation between total attempts and total
+attempted line breaks.
+Games that feature more total attempts and total attempted line breaks tend
+to have a greater number of goals scored. You can visualize this by selecting
+groups of points in the scatter plot and seeing how the barplot bars fill up.
+There does not appear to be any significant difference in possession split when
+comparing elimination vs group stage games.

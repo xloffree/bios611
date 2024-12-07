@@ -1,0 +1,38 @@
+---
+title: "linreg"
+output: pdf_document
+date: "2024-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Comparison to linear model
+
+```{r}
+library(caret)
+train_data_reg <- read.csv("xgb_train.csv")
+test_data_reg <- read.csv("xgb_test.csv")
+test_y <- read.csv("xgb_test_y.csv")
+df <- read.csv("match_data_clean.csv")
+#Linear regression model
+lin_model <- lm(total.goals~., data=as.data.frame(train_data_reg))
+#Predictions
+lin_pred <- predict(lin_model, test_data_reg)
+write.csv(lin_pred, "lin_pred.csv")
+#Evaluate performance
+#MSE
+mean((test_y - lin_pred)^2) 
+#MAE
+MAE(test_y, lin_pred) 
+#RMSE
+RMSE(test_y, lin_pred)
+
+mean(df$total.goals)
+```
+As suspected, the model's performance is poor. All three of the evaluation 
+metrics are horrendous considering that the mean number of total goals is 2.6875.
+Furthermore, the fit is rank-deficient since there are more predictors than
+observations. This results in very poor predictions.
+This example illustrates the importance of reducing multicollinearity and variable
+selection.

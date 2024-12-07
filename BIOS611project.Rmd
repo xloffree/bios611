@@ -1,0 +1,736 @@
+---
+title: "BIOS611 Project"
+author: "Xavier Loffree"
+date: "2024-11-12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(maps)
+library(ggplot2)
+library(tidyverse)
+library(mclust)
+library(xgboost)
+library(nnet)
+library(glmnet)
+library(data.table)
+library(caret)
+
+df <- read.csv("Fifa_world_cup_matches.csv", header=TRUE)
+
+```
+
+# Clean data and add variables
+
+```{r}
+#Make sure corresponding var names for teams 1 and 2 differ only by the team number
+#In other words, some of the column names have typos that we need to fix
+colnames(df)[which(colnames(df)=="attempts.inside.the.penalty.area..team2")] <-
+  "attempts.inside.the.penalty.area.team2"
+colnames(df)[which(colnames(df)=="completed.line.breaksteam1")] <-
+  "completed.line.breaks.team1"
+colnames(df)[which(colnames(df)=="completed.defensive.line.breaksteam1")] <-
+  "completed.defensive.line.breaks.team1"
+
+
+
+#Add total goals column
+df$total.goals <- df$number.of.goals.team1 + df$number.of.goals.team2
+
+#Add total attempts column
+df$total.attempts <- df$total.attempts.team1 + df$total.attempts.team2
+
+#Add total attempted line breaks column
+df$total.attempted.defensive.line.breaks <- 
+  df$attempted.defensive.line.breaks.team1 +
+  df$attempted.defensive.line.breaks.team2
+
+#Add indicator variable for if game is an elimination game
+df$elimination <- as.factor(c(rep(0,48), rep(1,16)))
+
+#Convert percentages to numerical vars
+pct_cols <- c("possession.team1", "possession.team2", "possession.in.contest")
+df[,pct_cols] <- lapply(df[,pct_cols], function(x) as.numeric(gsub("%", "", x)))
+
+#Add match outcome variable, 1=team1 win, 2=team2 win, 0=tie
+df$outcome <- as.factor(ifelse(df$number.of.goals.team1>df$number.of.goals.team2,1,
+                     ifelse(df$number.of.goals.team1<df$number.of.goals.team2,2,0)))
+
+
+write.csv(
+  df, "match_data_clean.csv",
+          row.names = FALSE)
+
+```
+
+
+#Create df with average match data by country
+```{r}
+
+df <- read.csv(
+  "match_data_clean.csv",
+  header=TRUE)
+
+#Create df to store country avg stats
+avg_country_df <- data.frame()
+
+#Create df for match data for each individual team (for use later)
+match_data_team <- data.frame()
+
+
+#Create new df with info summarized by country
+countries <- unique(df$team1)
+for (country in countries) {
+  
+  #Create subset df for games when country is team 1
+  df_ss1 <- df %>% filter(team1 == country)
+  df_ss1 <- df_ss1 %>% rename(fouls.committed = fouls.against.team1)
+  df_ss1 <- df_ss1 %>% rename(fouls.drawn = fouls.against.team2)
+  #Only keep variables related to country (remove team 2 vars)
+  df_ss1 <- df_ss1 %>% select(!contains("2"))
+  #Remove 1 from colnames
+  colnames(df_ss1) <- gsub("1", "", colnames(df_ss1), "team_num")
+  df_ss1$team_num <- 1
+  
+  #Vice versa
+  df_ss2 <- df %>% filter(team2 == country)
+  df_ss2 <- df_ss2 %>% rename(fouls.committed = fouls.against.team2)
+  df_ss2 <- df_ss2 %>% rename(fouls.drawn = fouls.against.team1)
+  #Only keep variables related to country (remove team 2 vars)
+  df_ss2 <- df_ss2 %>% select(!contains("1"))
+  #Remove 1 from colnames
+  colnames(df_ss2) <- gsub("2", "", colnames(df_ss2), "team_num")
+  df_ss2$team_num <- 2
+  
+  #Combine both ss dfs
+  df_combined <- rbind(df_ss1, df_ss2)
+
+  #Remove columns from which we can't take the average 
+  df_combined <- df_combined %>% 
+    select(-c("date", "hour", "category", "elimination"))
+  
+  #Create df for match data for each individual team (for use later)
+  match_data_team <- rbind(match_data_team, df_combined)
+  
+  #Take means of columns
+  df_summary <- df_combined[,-which(names(df_combined) %in% "outcome")] %>% group_by(team) %>% 
+    summarise_all(mean)
+  
+  #Add country row to df
+  avg_country_df <- rbind(avg_country_df, df_summary)
+
+}
+
+#Add columns for longitude and latitude of capital cities
+#Import this data
+capitals <- read.csv("country-capital-lat-long-population.csv", header=TRUE)
+#Convert to upper case and change column names to match data formats
+capitals$Country <- toupper(capitals$Country)
+colnames(capitals)[1] <- "team"
+
+#Need to make some manual additions to capitals df
+#Some country names are inconsistent
+#Not all teams in the World Cup are actualy countries
+capitals <- capitals %>% add_row(team="ENGLAND", Capital.City="London", 
+                                 Latitude=51.5085, Longitude=-0.1257, 
+                                 Population=9046485,Capital.Type="Capital")
+capitals <- capitals %>% add_row(team="KOREA REPUBLIC", Capital.City="Seoul", 
+                                 Latitude=37.5683, Longitude=126.9778, 
+                                 Population=9963497,Capital.Type="Capital")
+capitals <- capitals %>% add_row(team="UNITED STATES", 
+                                 Capital.City="Washington, D.C.", 
+                                 Latitude=38.8951, Longitude=-77.0364, 
+                                 Population=5206593,Capital.Type="Capital")
+capitals <- capitals %>% add_row(team="WALES", 
+                                 Capital.City="Cardiff", 
+                                 Latitude=51.481583, Longitude=-3.179090, 
+                                 Population=372089,Capital.Type="Capital")
+capitals <- capitals %>% add_row(team="IRAN", 
+                                 Capital.City="Tehran", 
+                                 Latitude=35.6944, Longitude=51.4215, 
+                                 Population=8895947,Capital.Type="Capital")
+
+#Merge
+coords_df <- merge(capitals, avg_country_df, by="team")
+write.csv(
+  coords_df, 
+  "avg_team_data.csv",
+  row.names = FALSE)
+
+#Add column to match_team_data indicating result of the match
+match_data_team$result <- as.factor(ifelse(match_data_team$outcome==0, 0,
+                    ifelse(match_data_team$outcome==match_data_team$team_num, 1, 2)))
+write.csv(
+  match_data_team,
+  "match_data_team.csv",
+  row.names = FALSE)
+
+```
+
+# Exploratory visualizations
+
+```{r}
+
+#Is the possession split more evenly in elimination games than in group games?
+ggplot(df, aes(x = possession.team1, y = possession.team2, color = elimination)) +
+  geom_point(size = 3) +
+  labs(x = "Possession team 1", y = "Possession team 2", color = "Elimination Game") +
+  ggtitle("Possession comparison coloured by elimination game indicator") +
+  scale_x_continuous(limits = c(10, 80)) +
+  scale_y_continuous(limits = c(10, 80))
+
+
+
+
+
+
+
+
+
+```
+
+The distribution of the total number of goals is skewed to the right.
+There appears to be a positive correlation between total attempts and total
+attempted line breaks.
+Games that feature more total attempts and total attempted line breaks tend
+to have a greater number of goals scored. You can visualize this by selecting
+groups of points in the scatter plot and seeing how the barplot bars fill up.
+There does not appear to be any significant difference in possession split when
+comparing elimination vs group stage games.
+
+# Does the number of fouls comitted differ by geography?
+
+```{r, fig.height=30}
+
+coords_df <- read.csv(
+  "avg_team_data.csv",
+  header=TRUE
+)
+
+#Does the number of fouls committed per game differ by geographic region?
+
+#Add fouls category by splitting into three quantiles
+coords_df$fouls_category <- 
+  cut(coords_df$fouls.committed, 
+      breaks = c(0, 
+                 quantile(coords_df$fouls.committed, 0.33),
+                 quantile(coords_df$fouls.committed, 0.66), 
+                 quantile(coords_df$fouls.committed, 1)),
+                                labels = c("Lower third", 
+                                           "Middle third", 
+                                           "Upper third"))
+
+
+
+
+#Put capital city of each team on map
+#Facet by number of fouls
+
+map_outline <- map_data("world")
+
+foul_map <- ggplot(coords_df, aes(x = Longitude, y = Latitude)) +
+    geom_point(color = "red", size = 6) +
+    labs(x = "Longitude", y = "Latitude", title = "World Cup Capitals")
+
+# Add the map layer and facet by 'fouls_category'
+foul_map <- foul_map + 
+    geom_path(data = map_outline, aes(x = long, y = lat, group = group), color = "forestgreen") +
+    facet_wrap(~ fouls_category, ncol=1)
+
+
+foul_map
+ggsave("foul_map.png")
+```
+It does not look like there are any geographical patterns with regard to number
+of fouls comitted.
+
+# Does geography influence play style? 
+
+That is, can we cluster the data such that the clusters represent distinct geographical regions?
+
+```{r}
+
+coords_df <- read.csv(
+  "avg_team_data.csv",
+  header=TRUE
+)
+
+#Remove variables not to be included in kmeans
+kmeans_df <- coords_df[,-c(1:6,ncol(coords_df))]
+#Scale data
+kmeans_df <- scale(kmeans_df)
+
+
+#Find k that minimizes within sum of squares (wss)
+
+#Store wss for each k value
+wss <- list()
+for (i in 1:10) {
+  # Fit the model: km.out
+  kmeans_wss <- kmeans(kmeans_df, centers = i)$tot.withinss
+  # Save the within cluster sum of squares
+  wss[[i]] <- kmeans_wss
+  
+  
+  
+}
+
+
+#Scree plot
+scree_df <-  data.frame(wss=unlist(wss), k=1:10)
+
+kmeans_scree <- ggplot(scree_df, aes(x = k, y = wss)) +
+    geom_point()+
+    geom_line() +
+    xlab('K')
+kmeans_scree
+
+
+```
+Looks like the rate of decrease drops off after k=5.
+Try clustering with k=5.
+This seems promising given that it is close to the number of continents.
+We can creatively group countries together to make 5 groups
+
+```{r}
+set.seed(42)
+k5 <- kmeans(kmeans_df, centers = 5, nstart = 20)
+k5$size
+#Add clusters to df
+coords_df$cluster5 <- as.factor(k5$cluster)
+
+```
+There is a group of one!
+Let's see which country did not fit into any group.
+Any guesses?
+
+```{r}
+
+#Show how the countries were categorized
+cluster_summary <- coords_df %>%
+  group_by(cluster5) %>%
+  summarize(team = paste(team, collapse = ", "))
+print(cluster_summary)
+write.csv("cluster_summary.csv")
+```
+
+Spain is the odd one out. Spain is known for having a distinct, possession-based
+play style.
+At first glance, there doesn't seem to be any obvious grouping by geography.
+Group 1 seems like it is the teams that did better in the tournament.
+Let's evaluate more carefully.
+
+Let's split the countries into 5 groups based on geography.
+Europe and Africa can be their own groups.
+Forming the other 3 groups is more interesting.
+Let's try a group of countries from the Americas, not including Canada and the 
+USA. Let's make another group for Asian countries. The last group can be 
+Canada, USA, and Australia. The reasoning here is that Canada, USA, and Australia
+seem more culturally similar to each other and Mexico, central America, and South
+America seem more culturally similar to each other. Objectively, this is at least
+true in terms of language.
+
+
+
+```{r}
+
+continent_g1 <- c("latam", "can_us_aus", "eur", "latam", "afr", "can_us_aus",
+                  "latam", "eur", "eur", "latam", "eur", "eur", "eur", "afr",
+                  "asia", "asia", "asia", "latam", "afr", "eur", "eur", "eur", 
+                  "asia", "asia", "afr", "eur", "eur", "eur", "afr", "can_us_aus",
+                  "latam", "eur")
+
+coords_df$cont_g1 <- continent_g1
+
+#Confusion matrix
+table(coords_df$cluster5, coords_df$cont_g1)
+
+```
+Does not look like there is any intelligent clustering by geography.
+
+Let's check the adjusted Rand index to be sure of this.
+
+```{r}
+
+# adjusted Rand index
+adjusted_rand <- adjustedRandIndex(coords_df$cluster5, coords_df$cont_g1)
+print(adjusted_rand)
+```
+The value close to zero indicates random assignment!
+
+So how did the algorithm make the clustering decisions?
+Let's check if it clustered the teams based on how well they performed in the
+tournament.
+The five groups can be:
+1. Eliminated in group stage (n=16)
+2. Eliminated in round of 16 (n=8)
+3. Eliminated in quarter finals (n=4)
+4. Eliminated in semi-finals (n=2)
+5. Finalists (n=2)
+
+
+```{r}
+
+coords_df$team
+
+place_g2 <- c("final", "16", "group", "quarter", "group", "group", "group",
+              "semi", "group", "group", "quarter", "final", "group", "group",
+              "group", "16", "16", "group", "semi", "quarter", "16", "quarter",
+              "group", "group", "16", "group", "16", "16", "group", "16",
+              "group", "group")
+coords_df$place_g2 <- place_g2
+
+#Confusion matrix
+table(coords_df$cluster5, coords_df$place_g2)
+
+```
+Still does not look promising...
+
+```{r}
+
+# adjusted Rand index
+adjusted_rand <- adjustedRandIndex(coords_df$cluster5, coords_df$place_g2)
+print(adjusted_rand)
+```
+The value is still very close to zero.
+
+Let's visualize the clusters on a map.
+
+```{r}
+
+map_outline <- map_data("world")
+
+foul_map <- ggplot(coords_df, aes(x = Longitude, y = Latitude, colour = cluster5)) +
+    geom_point(size = 5) +
+    labs(x = "Longitude", y = "Latitude", title = "World Cup Capitals")
+# Add the map layer and facet
+foul_map <- foul_map + 
+    geom_path(data = map_outline, aes(x = long, y = lat, group = group), color = "forestgreen")
+
+foul_map
+
+```
+
+The clustering on visualized on the map does not appear to reveal any patterns.
+
+
+# Can we successfully predict the outcome of a match given the match statistics?
+
+
+```{r}
+
+#Make tie the reference variable
+match_data_team$result <- relevel(match_data_team$result, ref = "0")
+#Create df to use in model
+#Remove variables that would make such predictions too easy (vars related to 
+#number of goals)
+#Also remove variables time, data, team
+match_data_team_model <- match_data_team[,-which(names(match_data_team) %in%
+                                             c("team",
+                                        "number.of.goals.team", "date",
+                                        "hour", "category", "team_num", "outcome",
+                                        "conceded.team",
+                                        "goal.inside.the.penalty.area.team",
+                                        "goal.outside.the.penalty.area.team",
+                                        "own.goals.team", "assists.team",
+                                        "penalties.scored.team"))]
+
+
+set.seed(42)
+train_indices <- sample(1:nrow(match_data_team_model),
+                        0.8 * nrow(match_data_team_model))
+train_data <- match_data_team_model[train_indices, ]
+test_data <- match_data_team_model[-train_indices, ]
+
+#Multinomial logistic regression
+mlog_reg_outcome <- multinom(result ~., data = train_data)
+
+logregsum <- summary(mlog_reg_outcome)
+
+predictions <- predict(mlog_reg_outcome, newdata = test_data)
+
+conf_matrix <- table(test_data$result, predictions)
+conf_matrix
+#Accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+accuracy
+
+
+
+#Pvalues
+p_values <- summary(mlog_reg_outcome)$coefficients / summary(mlog_reg_outcome)$standard.errors
+p_values <- (1 - pnorm(abs(p_values), 0, 1)) * 2
+p_values
+
+```
+The accuracy of our model was 0.5. This means that we can predict the outcome
+of the match with an accuracy greater than random guessing (which would have an
+accuracy of 0.33).
+
+However, the very high p-values indicate we may have a problem with 
+multicollinearity. Let's fix this by using elastic net as a variable selection
+method.
+
+# Elastic net
+
+```{r}
+
+# Prepare data for elastic net
+#Train test split
+x <- model.matrix(result ~ ., data = train_data)[,-1] 
+y <- train_data$result
+x_test <- model.matrix(result ~ ., data = test_data)[, -1]
+y_test <- test_data$result
+
+# Fit elastic net regression
+en_model <- cv.glmnet(as.matrix(x), y, family = "multinomial", alpha = 0.5,
+                      type.measure = "class")
+
+#Optimal lambda
+en_model$lambda.min
+#Selected coefficients for each class (tie, win, loss)
+coef(en_model, s = en_model$lambda.min)
+
+
+# Predicted class probabilities
+predicted_probs <- predict(en_model, newx = x_test, s = "lambda.min", type = "response")
+predicted_probs
+
+# Predicted class labels
+predicted_classes <- predict(en_model, newx = x_test, s = "lambda.min", type = "class")
+predicted_classes
+
+
+#Evaluate performance
+
+# Confusion matrix
+conf_matrix <- table(Predicted = predicted_classes, Actual = y_test)
+conf_matrix
+
+# Calculate accuracy
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+accuracy
+
+
+```
+The accuracy of 65.38% is significantly greater than using multinomial logistic regression without variable selection. It appears that variable selection helped
+improve our model.
+
+# Which variables are most important for these predictions?
+
+```{r}
+
+#Coefficients
+coefs <- coef(en_model, s = "lambda.min")
+#Coefficient df
+en_coef_df <- data.frame(Variable=c(colnames(x)),
+           coef0=coefs[1][[1]][2:40],
+           coef1=coefs[2][[1]][2:40],
+           coef2=coefs[3][[1]][2:40])
+#Convert data to long format for plotting
+long_df <- melt(data.table(en_coef_df), id.vars="Variable",
+     variable.name = "Model", value.name = "Value")
+
+
+
+#Plot the triplet bar graph
+#Compare coefficient values across all three classes (tie, loss, win)
+ggplot(long_df, aes(x = Variable, y = Value, fill = Model)) +
+  geom_bar(stat = "identity", position = "dodge") +  # position dodge places bars next to each other
+  theme_minimal() +
+  labs(title = "Triplet Bar Plot for Multiclass Coefficients", 
+       x = "Feature", 
+       y = "Coefficient") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size=6)) 
+
+
+```
+
+It looks like red cards and on target attempts were most important for 
+determining the outcome of the games, based on the plot. Surprisingly, the log 
+odds of winning versus tieing increase significantly for each red card a team 
+receives! Although I do not have data to support this, I would suspect that when 
+a winning team received a red card, it often happened near the end of the game.
+This way, the team would not have to play a man down for a long time.
+Another surprising result is that possession was not particularly influential in
+determining match outcome.
+
+
+#Permutation feature importance
+
+The coefficient values provide info on how important the variables were for 
+prediction. 
+Permutation feature importance (PFI) is another metric that can be used to assess
+the influence of a predictor on the model's prediction.
+PFI is the difference in model performance when one variable in the testing set
+is randomly permuted.
+Let's calculate PFI values for the elastic net model.
+
+```{r}
+set.seed(42)
+#Vector to store PFI values
+pfi_vect <- NULL
+
+for (i in 1:ncol(test_data)) {
+  #Clone test data
+  test_data_per <- test_data
+  #Randomly permute column i
+  test_data_per[,i] <- sample(test_data_per[,i])
+  #Create test data with randomly permuted column i
+  x_test_per <- model.matrix(result ~ ., data = test_data_per)[, -1]
+  
+  # Predicted class labels
+  predicted_classes_per <- predict(en_model, newx = x_test_per, s = "lambda.min", 
+                               type = "class")
+
+  # Confusion matrix
+  conf_matrix_per <- table(Predicted = predicted_classes_per, Actual = y_test)
+  
+  # Calculate accuracy
+  accuracy_per <- sum(diag(conf_matrix_per)) / sum(conf_matrix_per)
+  acc_diff <- accuracy_per - accuracy
+  #Append to pfi vector
+  pfi_vect <- c(pfi_vect, acc_diff)
+
+}
+
+
+#Create pfi df
+pfi_df <- data.frame(Var=colnames(test_data),
+                     PFI=pfi_vect)
+
+# Plot the coefficients for each class
+ggplot(pfi_df, aes(x=Var, y=PFI)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "PFI Values", 
+       x = "Feature", 
+       y = "PFI") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=6)) 
+
+```
+
+
+A negative PFI values indicates that the model accuracy decreased when permuting that particular variable, and vice versa for positive PFI values. A PFI
+value of 0 indicates that there was no change in model accuracy.
+
+The PFI results differed from the coefficients values. Notably, the PFI for red
+cards was 0. Forced turnovers was the second lowest PFI value, even though it did not have a particularly large coefficient value. Total 
+attempts on goal was the most influential variable in terms of PFI and in terms
+of coefficient values
+
+# Can we predict the total number of goals scored in a game?
+
+Let's try with xgboost
+
+```{r}
+set.seed(42)
+#Remove vars that would make such a prediction too easy
+#Also remove, data, time, team name, etc.
+df_reg <- df[,-which(names(df) %in% c("team1", "team2",
+                                        "number.of.goals.team1", 
+                                      "number.of.goals.team2","date",
+                                      "number.of.goals.team1",
+                                        "hour", "category", 
+                                        "conceded.team1","conceded.team2",
+                                        "goal.inside.the.penalty.area.team1",
+                                      "goal.inside.the.penalty.area.team2",
+                                        "goal.outside.the.penalty.area.team1",
+                                      "goal.outside.the.penalty.area.team2",
+                                        "own.goals.team1", "own.goals.team2",
+                                      "assists.team1", "assists.team2",
+                                        "penalties.scored.team1",
+                                      "penalties.scored.team2", "outcome",
+                                      "elimination"))]
+
+
+#Train test split
+train_indices_reg <- sample(1:nrow(df_reg),
+                        0.8 * nrow(df_reg))
+train_data_reg <- data.matrix(df_reg[train_indices_reg, ])
+test_data_reg <- df_reg[-train_indices_reg, ]
+
+#Define predictor and response variables in training set
+train_x = data.matrix(train_data_reg
+                     [,-which(colnames(train_data_reg)=="total.goals")])
+train_y = train_x[,which(colnames(train_data_reg)=="total.goals")]
+
+#Define predictor and response variables in testing set
+test_x = data.matrix(test_data_reg
+                     [,-which(colnames(test_data_reg)=="total.goals")])
+test_y = test_x[,which(colnames(test_data_reg)=="total.goals")]
+
+#Define final training and testing sets
+xgb_train = xgb.DMatrix(data = train_x, label = train_y)
+xgb_test = xgb.DMatrix(data = test_x, label = test_y)
+
+
+#Define watchlist
+watchlist = list(train=xgb_train, test=xgb_test)
+
+#Fit XGBoost model and display training and testing data at each round
+xgb_model = xgb.train(data = xgb_train, max.depth = 3, 
+                  watchlist=watchlist, nrounds = 70)
+#Avoid overfitting by stopping when rmse starts to increase
+xgb_final_model = xgb.train(data = xgb_train, max.depth = 3, 
+                  watchlist=watchlist, nrounds = 17)
+#Predictions
+y_pred <- predict(xgb_model, test_x)
+#MSE
+mean((test_y - y_pred)^2) 
+#MAE
+caret::MAE(test_y, y_pred) 
+#RMSE
+caret::RMSE(test_y, y_pred) 
+
+#Feature Importance
+importance <- xgb.importance(feature_names = colnames(train_x), model = xgb_model)
+print(importance)
+
+#Plot feature importance
+xgb.plot.importance(importance_matrix = importance)
+
+
+
+
+```
+The xgboost model can predict the total number of goals with a fair degree of
+accuracy. The MAE is less than one (0.6715505).
+
+We have seen earlier that our dataset contains a high degree of multicollinearity.
+Xgboost handles multicollinearity quite neatly on its own. Also, our dataset
+contains more predictors than observations. Xgboost can also handle this 
+efficiently.
+To offer some evidence for the previous statements, let's try to build a linear regression model with the same variables we used for the xgboost model.
+I suspect that the performance of this model will be poor without employing any
+kind of method to deal with the multicollinearity or any kind of dimension reduction.
+
+# Comparison to linear model
+
+```{r}
+#Linear regression model
+lin_model <- lm(total.goals~., data=as.data.frame(train_data_reg))
+#Predictions
+lin_pred <- predict(lin_model, test_data_reg)
+
+#Evaluate performance
+#MSE
+mean((test_y - lin_pred)^2) 
+#MAE
+caret::MAE(test_y, lin_pred) 
+#RMSE
+caret::RMSE(test_y, lin_pred)
+
+mean(df$total.goals)
+```
+As suspected, the model's performance is poor. All three of the evaluation 
+metrics are horrendous considering that the mean number of total goals is 2.6875.
+Furthermore, the fit is rank-deficient since there are more predictors than
+observations. This results in very poor predictions.
+This example illustrates the importance of reducing multicollinearity and variable
+selection.
